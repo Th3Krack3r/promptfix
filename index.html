@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PromptFix — Turn a vague prompt into a good one</title>
+<style>
+  body { font-family: system-ui, -apple-system, sans-serif; max-width: 760px;
+         margin: 0 auto; padding: 24px 16px; color: #1e1f24; background: #fff; }
+  h1 { margin-bottom: 4px; }
+  .tagline { color: #555; margin-top: 0; }
+  textarea { width: 100%; min-height: 110px; font-size: 16px; padding: 10px;
+             box-sizing: border-box; border: 1px solid #ccc; border-radius: 6px; }
+  button { font-size: 16px; padding: 10px 20px; border: 0; border-radius: 6px;
+           background: #2b6cb0; color: #fff; cursor: pointer; }
+  button.secondary { background: #e2e8f0; color: #1e1f24; }
+  button:disabled { opacity: 0.6; }
+  .examples { margin: 12px 0; }
+  .examples button { margin: 0 6px 6px 0; padding: 6px 12px; font-size: 14px; }
+  .panel { border: 1px solid #ddd; border-radius: 8px; padding: 16px;
+           margin-top: 20px; }
+  .panel h2 { margin-top: 0; font-size: 18px; }
+  pre { white-space: pre-wrap; word-wrap: break-word; background: #f7f7f7;
+        padding: 12px; border-radius: 6px; font-size: 15px; }
+  .note { background: #fff8e1; border: 1px solid #f0d98c; border-radius: 6px;
+          padding: 12px; margin-top: 16px; }
+  .ad-slot { border: 1px dashed #aaa; color: #777; text-align: center;
+             padding: 24px 12px; margin: 28px 0; font-size: 14px; }
+  .pro { background: #eef4ff; border: 1px solid #bcd3f7; border-radius: 8px;
+         padding: 16px; margin-top: 28px; }
+  .pro a { display: inline-block; margin-top: 8px; background: #2b6cb0;
+           color: #fff; text-decoration: none; padding: 10px 20px;
+           border-radius: 6px; }
+  .error { color: #b00020; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<h1>PromptFix</h1>
+<p class="tagline">Paste a vague prompt. Get a structured one that actually
+gets good answers out of any AI.</p>
+
+<label for="prompt"><strong>Your prompt</strong></label><br>
+<textarea id="prompt" placeholder="e.g. write something about dogs"></textarea>
+
+<div class="examples">
+  Try one:
+  <button type="button" class="secondary" data-example="write something about dogs">write something about dogs</button>
+  <button type="button" class="secondary" data-example="help me fix my python code it keeps crashing">fix my crashing Python code</button>
+  <button type="button" class="secondary" data-example="I need a resume for a warehouse job">resume for a warehouse job</button>
+</div>
+
+<button id="improveBtn" type="button">Improve it</button>
+<p id="error" class="error hidden"></p>
+
+<div id="results" class="hidden">
+  <div class="panel">
+    <h2>Before</h2>
+    <pre id="before"></pre>
+  </div>
+  <div class="panel">
+    <h2>After — concise</h2>
+    <pre id="concise"></pre>
+    <button type="button" data-copy="concise">Copy concise version</button>
+  </div>
+  <div class="panel">
+    <h2>After — detailed</h2>
+    <pre id="detailed"></pre>
+    <button type="button" data-copy="detailed">Copy detailed version</button>
+  </div>
+  <div id="noteBox" class="note hidden">
+    <strong id="noteText"></strong>
+    <ul id="questions"></ul>
+  </div>
+</div>
+
+<div class="ad-slot">
+  <!-- Ad slot: replace with your ad network code in config.py (AD_SLOT_HTML) -->
+  {{AD_SLOT_HTML}}
+</div>
+
+<div class="pro">
+  <h2>PromptFix Pro — $5 one-time</h2>
+  <p>Unlimited saved prompts and full prompt history, stored in your
+  browser. No subscription, pay once.</p>
+  <a href="{{STRIPE_PRO_LINK}}">Get PromptFix Pro — $5</a>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+
+document.querySelectorAll("[data-example]").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    $("prompt").value = btn.dataset.example;
+    $("prompt").focus();
+  });
+});
+
+document.querySelectorAll("[data-copy]").forEach((btn) => {
+  btn.addEventListener("click", async () => {
+    const text = $(btn.dataset.copy).textContent;
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch (e) {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      ta.remove();
+    }
+    const old = btn.textContent;
+    btn.textContent = "Copied ✓";
+    setTimeout(() => { btn.textContent = old; }, 2000);
+  });
+});
+
+$("improveBtn").addEventListener("click", async () => {
+  const prompt = $("prompt").value.trim();
+  const err = $("error");
+  err.classList.add("hidden");
+  if (!prompt) {
+    err.textContent = "Paste a prompt first.";
+    err.classList.remove("hidden");
+    return;
+  }
+  const btn = $("improveBtn");
+  btn.disabled = true;
+  btn.textContent = "Improving…";
+  try {
+    const res = await fetch("/api/improve", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Something went wrong.");
+    $("before").textContent = prompt;
+    $("concise").textContent = data.concise;
+    $("detailed").textContent = data.detailed;
+    if (data.note) {
+      $("noteText").textContent = data.note;
+      $("questions").innerHTML = "";
+      data.questions.forEach((q) => {
+        const li = document.createElement("li");
+        li.textContent = q;
+        $("questions").appendChild(li);
+      });
+      $("noteBox").classList.remove("hidden");
+    } else {
+      $("noteBox").classList.add("hidden");
+    }
+    $("results").classList.remove("hidden");
+  } catch (e) {
+    err.textContent = e.message;
+    err.classList.remove("hidden");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Improve it";
+  }
+});
+</script>
+</body>
+</html>
